@@ -1,0 +1,39 @@
+default:
+  image: docker.io/debian:bullseye
+
+variables:
+  PKG_NAME: asgard
+  PKG_VERSION: 1.4.0
+  DEB_REV: 0
+
+stages:
+  - build
+  - test
+  - publish
+
+build-deb:
+  stage: build
+  script:
+    - DEB_FILE=$(./debian/deb_build.sh $PKG_NAME $PKG_VERSION $DEB_REV)
+    - "echo DEB_FILE=$DEB_FILE >>build.env"
+  artifacts:
+    reports:
+      dotenv: build.env
+    paths:
+      - "*.deb"
+    expire_in: 1 hrs
+  when: manual
+
+check-deb:
+  stage: test
+  image: registry.gitlab-forge.din.developpement-durable.gouv.fr/pub/dnumarchi/lintian/lintian:latest
+  script:
+    - lintian --fail-on warning $DEB_FILE
+  when: manual
+
+push-deb:
+  stage: publish
+  image: curlimages/curl:latest
+  script:
+    - 'curl --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file $DEB_FILE "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/$PKG_NAME/$PKG_VERSION/$DEB_FILE"'
+  when: manual

@@ -1,0 +1,68 @@
+name: Asgard Debian packaging
+on: [push]
+env:
+  PKG_NAME: asgard
+  PKG_VERSION: 1.4.0
+  DEB_REV: 0
+  BUILD_ENV: build.env
+  PKGCLOUD_USERNAME: esa01
+  PKGCLOUD_REPO: asgard
+  PKGCLOUD_DISTRIB: any/any
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v3    
+      - name: Deb building
+        run: |
+          DEB_FILE=$(bash ./debian/deb_build.sh $PKG_NAME $PKG_VERSION $DEB_REV)
+          echo "Paquet construit: $DEB_FILE"
+          echo "DEB_FILE=$DEB_FILE" >> $BUILD_ENV
+      - name: Artifact upload
+        uses: actions/upload-artifact@v3
+        with:
+          name: asgard-deb
+          path: |
+            *.deb
+            *.env
+          retention-days: 1
+
+  check-deb:
+    runs-on: ubuntu-latest
+    container: registry.gitlab-forge.din.developpement-durable.gouv.fr/pub/dnumarchi/lintian/lintian:latest
+    needs: build-deb
+    steps:
+      - name: Artifact Download
+        uses: actions/download-artifact@v3
+        with:
+          name: asgard-deb
+      - name: Check Deb
+        run: |
+          [ -f $(pwd)/$BUILD_ENV ] && . $(pwd)/$BUILD_ENV
+          echo "Paquet à analyser : $DEB_FILE"
+          lintian --fail-on warning $DEB_FILE
+
+  publish-deb:
+    runs-on: ubuntu-latest
+    needs: check-deb
+    steps:
+      - name: Artifact Download
+        uses: actions/download-artifact@v3
+        with:
+          name: asgard-deb
+      - name: Prepare
+        run: |
+          ls -al
+          [ -f $(pwd)/$BUILD_ENV ] && . $(pwd)/$BUILD_ENV
+          echo "Paquet à publier : $DEB_FILE"
+          cat $BUILD_ENV >> "$GITHUB_ENV"
+      - name: Packagecloud
+        uses: danielmundi/upload-packagecloud@v1
+        with:
+          PACKAGE-NAME: ${{ env.DEB_FILE }}
+          PACKAGECLOUD-USERNAME: esa01
+          PACKAGECLOUD-REPO: asgard
+          PACKAGECLOUD-DISTRIB: any/any
+          PACKAGECLOUD-TOKEN: ${{ secrets.packagecloud_token }}
